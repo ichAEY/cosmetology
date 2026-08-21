@@ -1,0 +1,179 @@
+name: Deploy Elena Stroganova site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout client repository
+        uses: actions/checkout@v4
+        with:
+          path: customer
+
+      - name: Checkout pinned TANEM visual base
+        uses: actions/checkout@v4
+        with:
+          repository: ichAEY/claytone-current
+          ref: ce1bd42b44e76e1851af9e069c4cbcf06fc8eac2
+          path: template
+
+      - name: Checkout pinned TANEM factory layers
+        uses: actions/checkout@v4
+        with:
+          repository: ichAEY/tanem-master-template-v1
+          ref: 2c3590bdb8d4163532d126d67f27be1469a426c5
+          path: factory
+
+      - name: Apply client data and assets
+        shell: bash
+        run: |
+          set -e
+          cp customer/site-data.mjs template/site-data.mjs
+          cp customer/site-data.mjs factory/site-data.mjs
+          mkdir -p template/public/assets/client/portfolio
+
+          cp customer/assets/images/master.jpg template/public/assets/client/master.jpg
+          cp customer/assets/images/glavnayapk.PNG template/public/assets/client/glavnayapk.PNG
+          find customer/assets/images/portfolio -maxdepth 1 -type f -iname '*.png' -exec cp {} template/public/assets/client/portfolio/ \;
+
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          echo "SITE_BASE_PATH=/$REPO_NAME" >> "$GITHUB_ENV"
+          printf '%s\n' '// Booking uses an external client booking URL.' > template/public/noop.js
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: template/package-lock.json
+
+      - name: Install dependencies
+        working-directory: template
+        run: npm ci
+
+      - name: Generate site from client data
+        working-directory: template
+        run: node scripts/generate-site.mjs
+
+      - name: Apply TANEM structure
+        working-directory: template
+        run: node ../factory/scripts/apply-tanem-template.mjs
+
+      - name: Apply TANEM final refinements
+        working-directory: template
+        run: node ../factory/scripts/apply-tanem-final.mjs
+
+      - name: Apply TANEM adaptive polish
+        working-directory: template
+        run: node ../factory/scripts/apply-tanem-polish.mjs
+
+      - name: Apply TANEM tuning
+        working-directory: template
+        run: node ../factory/scripts/apply-tanem-tuning.mjs
+
+      - name: Apply hair profile
+        working-directory: template
+        run: node ../customer/scripts/apply-hair-profile.mjs
+
+      - name: Configure static export
+        working-directory: template
+        run: |
+          cat > next.config.ts <<'EOF'
+          import type { NextConfig } from "next";
+
+          const basePath = process.env.SITE_BASE_PATH || "";
+          const nextConfig: NextConfig = {
+            output: "export",
+            trailingSlash: true,
+            images: { unoptimized: true },
+            basePath,
+          };
+          export default nextConfig;
+          EOF
+
+      - name: Prefix root asset URLs for project Pages
+        working-directory: template
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const prefix = process.env.SITE_BASE_PATH || '';
+          const roots = ['app', 'public'];
+          const allowed = new Set(['.tsx', '.ts', '.js', '.mjs', '.css', '.html']);
+          const replacements = [
+            ['/assets/', `${prefix}/assets/`],
+            ['/claytone-enhancements.js', `${prefix}/claytone-enhancements.js`],
+            ['/android-scroll-fix.js', `${prefix}/android-scroll-fix.js`],
+            ['/favicon.svg', `${prefix}/favicon.svg`],
+            ['/noop.js', `${prefix}/noop.js`],
+          ];
+
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(full);
+              else if (allowed.has(path.extname(entry.name))) {
+                let text = fs.readFileSync(full, 'utf8');
+                const before = text;
+                for (const [from, to] of replacements) text = text.split(from).join(to);
+                if (text !== before) fs.writeFileSync(full, text);
+              }
+            }
+          }
+
+          for (const root of roots) if (fs.existsSync(root)) walk(root);
+          NODE
+
+      - name: Prepare clean Pages build
+        working-directory: template
+        run: |
+          rm -rf public/_next
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = 'tsconfig.json';
+          const config = JSON.parse(fs.readFileSync(path, 'utf8'));
+          config.exclude = [
+            ...(config.exclude || []),
+            'db/**', 'worker/**', 'examples/**', 'build/**', 'drizzle/**',
+            'drizzle.config.ts', 'vite.config.ts'
+          ];
+          fs.writeFileSync(path, JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Build client site
+        working-directory: template
+        run: npx next build
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: template/out
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
