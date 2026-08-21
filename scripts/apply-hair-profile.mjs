@@ -10,7 +10,6 @@ let css = fs.readFileSync(cssPath, "utf8");
 let layout = fs.readFileSync(layoutPath, "utf8");
 
 const desktopHero = site.images?.heroDesktop || site.images?.portrait;
-const mobileHero = site.images?.heroMobile || site.images?.gallery?.[0]?.src || site.images?.portrait;
 
 source = source
   .replaceAll("Маникюр и педикюр от Елены Строгановой · Москва", "Стрижки и окрашивание · Москва")
@@ -19,11 +18,27 @@ source = source
   .replaceAll("Telegram", "WhatsApp")
   .replaceAll("Личный WhatsApp", "WhatsApp");
 
-// The base header uses a Telegram paper-plane icon. Replace it with a neutral chat icon for WhatsApp.
-source = source.replaceAll(
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z" /><path d="M22 2 11 13" /></svg>',
-  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z" /></svg>',
-);
+source = source
+  .replace(
+    '<div><p className="mct-section-kicker">О мастере</p><h2>Мастер, к которому возвращаются</h2></div>',
+    '<div><p className="mct-section-kicker">О мастере</p><h2>Мастер Елена</h2></div>',
+  )
+  .replace(
+    '<p className="mct-about-lead">Стрижки, окрашивание и работа с текстурой волос — с предварительным обсуждением результата.</p>',
+    '<p className="mct-about-lead">Я Елена, парикмахер-колорист. Для меня важно, чтобы результат подходил именно вам — по форме, оттенку и тому, как вы привыкли носить волосы.</p>',
+  )
+  .replace(
+    '<p>Клиенты особенно отмечают, что Елена внимательно слушает пожелания, помогает подобрать форму и оттенок и объясняет, как поддерживать результат дома.</p>',
+    '<p>Перед работой я всегда обсуждаю желаемый результат и состояние волос. Если вижу, что выбранная техника может навредить качеству волос, предлагаю более безопасный вариант и объясняю почему.</p>',
+  )
+  .replace(
+    '<p>Для сложного осветления при первом визите предусмотрен тест-прядь. В стоимость большинства окрашиваний входят расходники, мытьё и укладка.</p>',
+    '<p>Работаю со стрижками, укладками, окрашиваниями и восстановлением волос. Перед сложным осветлением на первом визите делаю тест-прядь, а после процедуры подсказываю, как сохранить цвет и качество волос дома.</p>',
+  )
+  .replace(
+    '<ul className="mct-about-list"><li>Стрижки и укладки</li><li>Сложные техники окрашивания</li><li>Уход и восстановление волос</li></ul>',
+    '<ul className="mct-about-list"><li>Стрижки и укладки</li><li>Окрашивание и осветление</li><li>Уход и восстановление</li></ul>',
+  );
 
 source = source.replace(
   `${site.reputation.reviewCount} оценок<br />Все отзывы на Яндексе →`,
@@ -81,38 +96,30 @@ css += `
   background-color: var(--tanem-hair-bg);
 }
 
+.mct-about-copy > .mct-about-lead {
+  text-wrap: balance;
+}
+
 @media (max-width: 767px) {
   .mct-hero > .mct-shell {
-    grid-template-rows: auto auto minmax(154px, .78fr) auto !important;
+    grid-template-rows: auto minmax(0, 1fr) auto !important;
+  }
+
+  .mct-hero-content {
+    align-self: center;
+    padding: clamp(26px, 7svh, 58px) 0 clamp(22px, 5svh, 42px) !important;
   }
 
   .mct-hero-visual {
-    min-height: 154px !important;
-    margin: 8px 0 7px !important;
-    overflow: hidden !important;
-    border-radius: 24px;
-    background: #ece7e1;
-    box-shadow: 0 18px 42px rgba(54, 45, 39, .09);
+    display: none !important;
   }
 
-  .mct-hero-visual::before {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    display: block;
-    background:
-      linear-gradient(180deg, rgba(255,255,255,.04), rgba(35,29,25,.1)),
-      url("${mobileHero}") center 42% / cover no-repeat;
-    content: "";
-  }
-
-  .mct-hero-visual::after {
-    position: absolute;
-    inset: auto 0 0;
-    z-index: 1;
-    height: 38%;
-    background: linear-gradient(180deg, transparent, rgba(36,29,25,.08));
-    content: "";
+  .mct-intro-mark span {
+    max-width: calc(100vw - 36px);
+    font-size: clamp(32px, 10vw, 44px) !important;
+    letter-spacing: .01em !important;
+    text-align: center;
+    white-space: nowrap;
   }
 
   .dct-hero-portrait {
@@ -125,6 +132,65 @@ css += `
 
   .mct-hero-copy {
     max-width: 34ch !important;
+  }
+
+  .mct-about h2 {
+    max-width: none !important;
+    font-size: clamp(35px, 10.4vw, 45px) !important;
+    line-height: .94 !important;
+  }
+
+  .mct-about-copy {
+    padding: 23px 20px 20px !important;
+  }
+
+  .mct-about-copy > .mct-about-lead {
+    max-width: 31ch;
+    font-size: clamp(20px, 5.9vw, 23px) !important;
+    line-height: 1.25 !important;
+  }
+
+  .mct-about-copy > p:not(.mct-about-lead) {
+    font-size: 13px !important;
+    line-height: 1.62 !important;
+  }
+
+  .mct-about-copy > p + p {
+    padding-top: 14px !important;
+  }
+
+  .mct-about-list {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0 !important;
+    margin: 19px 0 0 !important;
+    padding: 0 !important;
+    border-top: 1px solid rgba(70, 55, 49, .13);
+  }
+
+  .mct-about-list li {
+    display: flex !important;
+    min-height: 42px;
+    align-items: center;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    border-top: 0 !important;
+    border-bottom: 1px solid rgba(70, 55, 49, .11);
+    color: #514b47 !important;
+    font-size: 10.5px !important;
+    font-weight: 600 !important;
+    line-height: 1.3 !important;
+    letter-spacing: .025em;
+    text-align: left !important;
+  }
+
+  .mct-about-list li:last-child {
+    border-bottom: 0;
+  }
+
+  .mct-final-contact-grid > .mct-final-secondary:last-child {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
   }
 }
 
@@ -147,6 +213,10 @@ css += `
 
   .tanem-hero-title {
     max-width: 14ch !important;
+  }
+
+  .mct-about-copy > .mct-about-lead {
+    max-width: 30ch;
   }
 }
 `;
