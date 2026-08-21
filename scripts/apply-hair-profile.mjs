@@ -102,12 +102,17 @@ css += `
 
 @media (max-width: 767px) {
   .mct-hero > .mct-shell {
-    grid-template-rows: auto minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto minmax(0, 1fr) auto !important;
   }
 
   .mct-hero-content {
-    align-self: center;
-    padding: clamp(26px, 7svh, 58px) 0 clamp(22px, 5svh, 42px) !important;
+    grid-row: 2;
+    align-self: auto;
+    padding: clamp(12px, 2.1svh, 19px) 0 0 !important;
+  }
+
+  .mct-hero-bottom {
+    grid-row: 4;
   }
 
   .mct-hero-visual {
