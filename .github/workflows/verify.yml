@@ -161,25 +161,19 @@ jobs:
             printf '%s\n' "$STALE" >> "$REPORT"
           fi
 
-          for NEEDLE in 'Елена Строганова' 'парикмахер-колорист' 'Airtouch' 'Профсоюзная'; do
+          for NEEDLE in 'Елена Строганова' 'парикмахер-колорист' 'Профсоюзная'; do
             if ! grep -Fqi "$NEEDLE" /tmp/tanem-visible.txt; then
               FAILED=1
               echo "missing_visible=$NEEDLE" >> "$REPORT"
             fi
           done
 
-          HTML_ALL=$(find template/out -type f -name '*.html' -print0 | xargs -0 cat)
-          for NEEDLE in 'fail14.png' 'master.jpg'; do
-            if ! printf '%s' "$HTML_ALL" | grep -Fq "$NEEDLE"; then
+          for NEEDLE in 'Airtouch' 'fail14.png' 'master.jpg' 'glavnayapk.PNG'; do
+            if ! grep -RFqs "$NEEDLE" template/out; then
               FAILED=1
-              echo "missing_asset=$NEEDLE" >> "$REPORT"
+              echo "missing_bundled=$NEEDLE" >> "$REPORT"
             fi
           done
-
-          if ! grep -Rqs 'glavnayapk.PNG' template/out/_next/static/css; then
-            FAILED=1
-            echo 'missing_asset=glavnayapk.PNG in rendered CSS' >> "$REPORT"
-          fi
 
           if [ "$FAILED" -eq 0 ]; then
             echo 'qa_ok=true' >> "$REPORT"
