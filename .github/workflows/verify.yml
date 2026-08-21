@@ -1,0 +1,175 @@
+name: Verify Elena Stroganova site
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout client
+        uses: actions/checkout@v4
+        with:
+          path: customer
+
+      - name: Checkout TANEM visual base
+        uses: actions/checkout@v4
+        with:
+          repository: ichAEY/claytone-current
+          ref: ce1bd42b44e76e1851af9e069c4cbcf06fc8eac2
+          path: template
+
+      - name: Checkout TANEM factory
+        uses: actions/checkout@v4
+        with:
+          repository: ichAEY/tanem-master-template-v1
+          ref: 2c3590bdb8d4163532d126d67f27be1469a426c5
+          path: factory
+
+      - name: Prepare client build
+        shell: bash
+        run: |
+          set -e
+          cp customer/site-data.mjs template/site-data.mjs
+          cp customer/site-data.mjs factory/site-data.mjs
+          mkdir -p template/public/assets/client/portfolio
+          cp customer/assets/images/master.jpg template/public/assets/client/master.jpg
+          cp customer/assets/images/glavnayapk.PNG template/public/assets/client/glavnayapk.PNG
+          find customer/assets/images/portfolio -maxdepth 1 -type f -iname '*.png' -exec cp {} template/public/assets/client/portfolio/ \;
+          echo 'SITE_BASE_PATH=/cosmetology' >> "$GITHUB_ENV"
+          printf '%s\n' '// External booking URL.' > template/public/noop.js
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: template/package-lock.json
+
+      - name: Build dependencies
+        working-directory: template
+        run: npm ci
+
+      - name: Generate and adapt site
+        working-directory: template
+        run: |
+          set -e
+          node scripts/generate-site.mjs
+          node ../factory/scripts/apply-tanem-template.mjs
+          node ../factory/scripts/apply-tanem-final.mjs
+          node ../factory/scripts/apply-tanem-polish.mjs
+          node ../factory/scripts/apply-tanem-tuning.mjs
+          node ../customer/scripts/apply-hair-profile.mjs
+
+      - name: Configure export
+        working-directory: template
+        run: |
+          cat > next.config.ts <<'EOF'
+          import type { NextConfig } from "next";
+          const basePath = process.env.SITE_BASE_PATH || "";
+          const nextConfig: NextConfig = { output: "export", trailingSlash: true, images: { unoptimized: true }, basePath };
+          export default nextConfig;
+          EOF
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const prefix = process.env.SITE_BASE_PATH || '';
+          const roots = ['app', 'public'];
+          const allowed = new Set(['.tsx', '.ts', '.js', '.mjs', '.css', '.html']);
+          const replacements = [
+            ['/assets/', `${prefix}/assets/`],
+            ['/claytone-enhancements.js', `${prefix}/claytone-enhancements.js`],
+            ['/android-scroll-fix.js', `${prefix}/android-scroll-fix.js`],
+            ['/favicon.svg', `${prefix}/favicon.svg`],
+            ['/noop.js', `${prefix}/noop.js`],
+          ];
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const full = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(full);
+              else if (allowed.has(path.extname(entry.name))) {
+                let text = fs.readFileSync(full, 'utf8');
+                const before = text;
+                for (const [from, to] of replacements) text = text.split(from).join(to);
+                if (text !== before) fs.writeFileSync(full, text);
+              }
+            }
+          }
+          for (const root of roots) if (fs.existsSync(root)) walk(root);
+          NODE
+          rm -rf public/_next
+          node - <<'NODE'
+          const fs = require('fs');
+          const config = JSON.parse(fs.readFileSync('tsconfig.json', 'utf8'));
+          config.exclude = [...(config.exclude || []), 'db/**', 'worker/**', 'examples/**', 'build/**', 'drizzle/**', 'drizzle.config.ts', 'vite.config.ts'];
+          fs.writeFileSync('tsconfig.json', JSON.stringify(config, null, 2) + '\n');
+          NODE
+
+      - name: Build static site
+        working-directory: template
+        run: npx next build
+
+      - name: Verify rendered content
+        id: qa
+        shell: bash
+        run: |
+          set +e
+          REPORT="$GITHUB_WORKSPACE/customer/.tanem-qa-report"
+          : > "$REPORT"
+          echo "source=$GITHUB_SHA" >> "$REPORT"
+          echo "checked=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$REPORT"
+          FAILED=0
+          find template/out -type f -name '*.html' -print0 | xargs -0 cat > /tmp/tanem-visible.html
+
+          STALE=$(grep -Ein 'Нонна|ClayTone|Маникюр|Педикюр|ногт|Telegram' /tmp/tanem-visible.html | head -20)
+          if [ -n "$STALE" ]; then
+            FAILED=1
+            echo 'stale_visible_content:' >> "$REPORT"
+            printf '%s\n' "$STALE" >> "$REPORT"
+          fi
+
+          for NEEDLE in 'Елена Строганова' 'парикмахер-колорист' 'Airtouch' 'Профсоюзная' 'fail14.png' 'master.jpg'; do
+            if ! grep -Fqi "$NEEDLE" /tmp/tanem-visible.html; then
+              FAILED=1
+              echo "missing=$NEEDLE" >> "$REPORT"
+            fi
+          done
+
+          if ! grep -Rqs 'glavnayapk.PNG' template/out/_next/static/css; then
+            FAILED=1
+            echo 'missing=glavnayapk.PNG in rendered CSS' >> "$REPORT"
+          fi
+
+          if [ "$FAILED" -eq 0 ]; then
+            echo 'qa_ok=true' >> "$REPORT"
+            echo 'ok=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'qa_ok=false' >> "$REPORT"
+            echo 'ok=false' >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Record QA result
+        shell: bash
+        run: |
+          set -e
+          cd customer
+          printf 'qa_ok=%s\nsource=%s\n' "${{ steps.qa.outputs.ok }}" "$GITHUB_SHA" > .tanem-qa-ok
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .tanem-qa-ok .tanem-qa-report
+          git commit -m "Record static QA result [skip ci]" || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            sleep 3
+          done
+          exit 1
+
+      - name: Enforce QA
+        if: steps.qa.outputs.ok != 'true'
+        run: exit 1
