@@ -124,25 +124,61 @@ jobs:
           echo "source=$GITHUB_SHA" >> "$REPORT"
           echo "checked=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$REPORT"
           FAILED=0
-          find template/out -type f -name '*.html' -print0 | xargs -0 cat > /tmp/tanem-visible.html
 
-          STALE=$(grep -Ein 'Нонна|ClayTone|Маникюр|Педикюр|ногт|Telegram' /tmp/tanem-visible.html | head -20)
+          python - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class VisibleText(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.hidden = 0
+                  self.parts = []
+              def handle_starttag(self, tag, attrs):
+                  if tag in {"script", "style", "noscript", "svg"}:
+                      self.hidden += 1
+              def handle_endtag(self, tag):
+                  if tag in {"script", "style", "noscript", "svg"} and self.hidden:
+                      self.hidden -= 1
+              def handle_data(self, data):
+                  if not self.hidden:
+                      text = " ".join(data.split())
+                      if text:
+                          self.parts.append(text)
+
+          chunks = []
+          for path in Path("template/out").rglob("*.html"):
+              parser = VisibleText()
+              parser.feed(path.read_text(encoding="utf-8", errors="ignore"))
+              chunks.extend(parser.parts)
+          Path("/tmp/tanem-visible.txt").write_text("\n".join(chunks), encoding="utf-8")
+          PY
+
+          STALE=$(grep -Eio 'Нонна|ClayTone|Маникюр|Педикюр|ногт[^[:space:]]*|Telegram' /tmp/tanem-visible.txt | sort -fu | head -20)
           if [ -n "$STALE" ]; then
             FAILED=1
             echo 'stale_visible_content:' >> "$REPORT"
             printf '%s\n' "$STALE" >> "$REPORT"
           fi
 
-          for NEEDLE in 'Елена Строганова' 'парикмахер-колорист' 'Airtouch' 'Профсоюзная' 'fail14.png' 'master.jpg'; do
-            if ! grep -Fqi "$NEEDLE" /tmp/tanem-visible.html; then
+          for NEEDLE in 'Елена Строганова' 'парикмахер-колорист' 'Airtouch' 'Профсоюзная'; do
+            if ! grep -Fqi "$NEEDLE" /tmp/tanem-visible.txt; then
               FAILED=1
-              echo "missing=$NEEDLE" >> "$REPORT"
+              echo "missing_visible=$NEEDLE" >> "$REPORT"
+            fi
+          done
+
+          HTML_ALL=$(find template/out -type f -name '*.html' -print0 | xargs -0 cat)
+          for NEEDLE in 'fail14.png' 'master.jpg'; do
+            if ! printf '%s' "$HTML_ALL" | grep -Fq "$NEEDLE"; then
+              FAILED=1
+              echo "missing_asset=$NEEDLE" >> "$REPORT"
             fi
           done
 
           if ! grep -Rqs 'glavnayapk.PNG' template/out/_next/static/css; then
             FAILED=1
-            echo 'missing=glavnayapk.PNG in rendered CSS' >> "$REPORT"
+            echo 'missing_asset=glavnayapk.PNG in rendered CSS' >> "$REPORT"
           fi
 
           if [ "$FAILED" -eq 0 ]; then
