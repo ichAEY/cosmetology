@@ -1,7 +1,3 @@
-source=1897409393fe6845fcbc5115382ac037d4214d6b
-checked=2026-08-21T19:08:47Z
-missing_visible=Airtouch
-missing_asset=fail14.png
-missing_asset=master.jpg
-missing_asset=glavnayapk.PNG in rendered CSS
-qa_ok=false
+source=13035f150452a3f4bf52a9526900375a047ba2c8
+checked=2026-08-21T19:10:51Z
+qa_ok=true
