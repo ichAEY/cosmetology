@@ -159,12 +159,34 @@ jobs:
         working-directory: template
         run: npx next build
 
-      - name: Record successful build
+      - name: Static content QA
+        shell: bash
+        run: |
+          set -e
+          HTML_FILES=$(find template/out -type f -name '*.html')
+          test -n "$HTML_FILES"
+          cat $HTML_FILES > /tmp/tanem-visible.html
+
+          if grep -Eiq 'Нонна|ClayTone|Маникюр|Педикюр|ногт|Telegram' /tmp/tanem-visible.html; then
+            echo 'Found stale nail-profile content in rendered HTML:'
+            grep -Ein 'Нонна|ClayTone|Маникюр|Педикюр|ногт|Telegram' /tmp/tanem-visible.html | head -20
+            exit 1
+          fi
+
+          grep -q 'Елена Строганова' /tmp/tanem-visible.html
+          grep -q 'Парикмахер-колорист' /tmp/tanem-visible.html
+          grep -q 'Airtouch' /tmp/tanem-visible.html
+          grep -q 'Профсоюзная' /tmp/tanem-visible.html
+          grep -q 'fail14.png' /tmp/tanem-visible.html
+          grep -q 'master.jpg' /tmp/tanem-visible.html
+          grep -Rqs 'glavnayapk.PNG' template/out/_next/static/css
+
+      - name: Record successful build and QA
         shell: bash
         run: |
           set -e
           cd customer
-          printf 'build_ok=%s\nsource=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GITHUB_SHA" > .tanem-build-ok
+          printf 'build_ok=%s\nqa_ok=true\nsource=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$GITHUB_SHA" > .tanem-build-ok
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add .tanem-build-ok
